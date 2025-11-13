@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import 'dotenv/config';
+import * as readline from 'readline';
 const XEAMS_API_KEY = process.env.XEAMS_API_KEY;
 const XEAMS_SECRET = process.env.XEAMS_SECRET;
 const XEAMS_API_BASE = process.env.XEAMS_API_BASE || "https://xeams.yourcompanycom/api";
@@ -154,10 +155,19 @@ for (const arg of process.argv) {
 }
 if (isTest) {
     // Run test code. This is useful for debugging outside of an MCP environment.
-    const result = await isValidEmail(testEmail);
-    console.log(`Test Email Validation for ${testEmail}: ${result}`);
-    const statusResults = await checkEmailStatus(testEmail);
-    console.log(`Test Email Status for ${testEmail}:`, statusResults);
+    const r1 = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+    });
+    r1.question('Enter an email to validate: ', async (inputEmail) => {
+        const result = await isValidEmail(inputEmail);
+        console.log(`Email Validation Result for ${inputEmail}: ${result}`);
+        r1.question("Enter a recipient's email to check status: ", async (inputEmail2) => {
+            const statusResults = await checkEmailStatus(inputEmail2);
+            console.log(`Email Status Results for ${inputEmail2}:`, statusResults);
+            r1.close();
+        });
+    });
 }
 else {
     // Create a standard I/O transport
