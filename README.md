@@ -40,6 +40,7 @@ An MCP server implementation for Xeams, an on-premise email server.
    | SENDER_EMAIL           | Email address used for sender's address.         | Yes      |
    
 4. **Configuring Xeams**
+- Download and install Xeams if needed, from [https://www.xeams.com](https://www.xeams.com)
 - Log into your Xeams console with your administrator's credentials
 - Click **Home > Plugins**, and click the **Manage** button for Xeams API
 - Create new API Key and grant permission to send emails.
@@ -104,5 +105,6 @@ This MCP server exposes two tools to any MCP client:
 
 1. Validate email address, allowing a user to validate if an email address is correct. This validation is more than a simple syntax check. It confirms the domain name has an MX record and the user's address exists in the recipient's server.
 2. Confirms the status of a previously sent email. In this case, it will report the status of the message, the IP address of the receiving SMTP server and if encryption was used.
+
 
 
