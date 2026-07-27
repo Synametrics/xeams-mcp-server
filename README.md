@@ -7,6 +7,9 @@ An MCP server implementation for Xeams, an on-premise email server.
 - You can use this server with any MCP client, or AI tools such as Claude Desktop to:
 	- Validate email addresses
 	- Check the status of outbound emails sent.
+	- Check the Xeams server's health, uptime, memory and disk usage, and queue counts.
+	- Search for emails processed by Xeams.
+	- Fetch the raw MIME (*.eml) content, body, or attachments of a specific email.
 	
 ## Requirement
 - Xeams server, version 9.9 or newer
@@ -63,6 +66,8 @@ Imagine you're working on implementing a Chatbot for your organization where you
 
 Additionally, you can also confirm if an email address specified by a user is correct. This check is more than a simple syntax check. The MCP server actually connects to the recipient's SMTP server to confirm the user exists.
 
+You can also use this server for administrative and support tasks, such as checking whether the Xeams server itself is healthy, searching for a specific email a customer says they sent or received, and pulling up that email's raw content, body, or attachments for troubleshooting.
+
 
 ## Configuration with Claude Desktop
 To install this MCP server using Claude Desktop, follow the steps below.
@@ -101,10 +106,14 @@ I sent an email to aFriend@example.com yesterday. Did he get my message?
 ```
 
 ## Available tools
-This MCP server exposes two tools to any MCP client:
+This MCP server exposes the following tools to any MCP client:
 
-1. Validate email address, allowing a user to validate if an email address is correct. This validation is more than a simple syntax check. It confirms the domain name has an MX record and the user's address exists in the recipient's server.
-2. Confirms the status of a previously sent email. In this case, it will report the status of the message, the IP address of the receiving SMTP server and if encryption was used.
-
+1. **ValidateAddress** - Validates if an email address is correct. This validation is more than a simple syntax check. It confirms the domain name has an MX record and the user's address exists in the recipient's server.
+2. **CheckEmailStatus** - Confirms the status of a previously sent email. In this case, it will report the status of the message, the IP address of the receiving SMTP server and if encryption was used.
+3. **GetServerStatus** - Fetches the Xeams server's status, including uptime, memory usage, disk space, and email queue counts (incoming/outgoing counts, stuck/processing queue sizes).
+4. **SearchEmails** - Searches for emails processed by Xeams matching a search string, optionally scoped to a number of days back and a profile ID. Returns matching messages (subject, sender, recipients, date, score) along with their `lcid`/`clusterIndex`, which identify the message for use with the fetch tools below.
+5. **FetchEmailRaw** - Fetches the raw MIME content (`*.eml`) of a specific email, encoded in base64. Contains headers, body and attachments. Takes the `lcid` (and optional `clusterIndex`/`profileId`/`startingDate`) returned by SearchEmails.
+6. **FetchEmailBody** - Fetches just the body of a specific email, encoded in base64. HTML body is preferred over plain text when both are present.
+7. **FetchEmailAttachments** - Fetches the attachments of a specific email. Each attachment's content is base64 encoded, along with its file name and MIME type.
 
 

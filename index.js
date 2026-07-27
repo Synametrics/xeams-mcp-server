@@ -44,6 +44,18 @@ async function fetchUrl(url) {
     });
     return response;
 }
+async function postUrl(url, body) {
+    const credentials = btoa(`${XEAMS_API_KEY || ''}:${XEAMS_SECRET || ''}`);
+    const response = await fetch(url.toString(), {
+        method: 'POST',
+        headers: {
+            'Authorization': `Basic ${credentials}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+    });
+    return response;
+}
 async function checkEmailStatus(email) {
     try {
         // Call Xeams API to validate email address
@@ -76,6 +88,109 @@ async function checkEmailStatus(email) {
     catch (error) {
         console.error('Error validating email:', error);
         return [];
+    }
+}
+async function getServerStatus() {
+    try {
+        const url = new URL('/api/server/status', XEAMS_API_BASE);
+        url.searchParams.append('auth-key', XEAMS_API_KEY || '');
+        url.searchParams.append('secret', XEAMS_SECRET || '');
+        const response = await fetchUrl(url);
+        if (!response.ok) {
+            console.error(`API request failed with status: ${response.status}`);
+            return null;
+        }
+        return await response.json();
+    }
+    catch (error) {
+        console.error('Error fetching server status:', error);
+        return null;
+    }
+}
+async function searchEmails(searchFor, numDays, profileId) {
+    try {
+        const url = new URL('/api/email/search', XEAMS_API_BASE);
+        url.searchParams.append('auth-key', XEAMS_API_KEY || '');
+        url.searchParams.append('secret', XEAMS_SECRET || '');
+        const body = { searchFor };
+        if (numDays !== undefined)
+            body.numDays = numDays;
+        if (profileId !== undefined)
+            body.profileId = profileId;
+        const response = await postUrl(url, body);
+        if (!response.ok) {
+            console.error(`API request failed with status: ${response.status}`);
+            return [];
+        }
+        const data = await response.json();
+        return Array.isArray(data.ResultsArray) ? data.ResultsArray : [];
+    }
+    catch (error) {
+        console.error('Error searching emails:', error);
+        return [];
+    }
+}
+function buildEmailFetchUrl(path, params) {
+    const url = new URL(path, XEAMS_API_BASE);
+    url.searchParams.append('auth-key', XEAMS_API_KEY || '');
+    url.searchParams.append('secret', XEAMS_SECRET || '');
+    url.searchParams.append('lcid', String(params.lcid));
+    if (params.clusterIndex !== undefined)
+        url.searchParams.append('clusterIndex', String(params.clusterIndex));
+    if (params.profileId !== undefined)
+        url.searchParams.append('profileId', String(params.profileId));
+    if (params.startingDate !== undefined)
+        url.searchParams.append('startingDate', params.startingDate);
+    return url;
+}
+async function fetchEmailRaw(params) {
+    try {
+        const url = buildEmailFetchUrl('/api/email/fetch/raw', params);
+        const response = await fetchUrl(url);
+        if (!response.ok) {
+            console.error(`API request failed with status: ${response.status}`);
+            return { code: response.status, description: '' };
+        }
+        return await response.json();
+    }
+    catch (error) {
+        console.error('Error fetching raw email:', error);
+        return { code: -3, description: '' };
+    }
+}
+async function fetchEmailBody(params) {
+    try {
+        const url = buildEmailFetchUrl('/api/email/fetch/body', params);
+        const response = await fetchUrl(url);
+        if (!response.ok) {
+            console.error(`API request failed with status: ${response.status}`);
+            return { code: response.status, description: '' };
+        }
+        return await response.json();
+    }
+    catch (error) {
+        console.error('Error fetching email body:', error);
+        return { code: -3, description: '' };
+    }
+}
+async function fetchEmailAttachments(params) {
+    try {
+        const url = buildEmailFetchUrl('/api/email/fetch/attachments', params);
+        const response = await fetchUrl(url);
+        if (!response.ok) {
+            console.error(`API request failed with status: ${response.status}`);
+            return { code: response.status, description: '', attachments: [] };
+        }
+        const data = await response.json();
+        return {
+            code: data.code,
+            description: data.description || '',
+            attachments: Array.isArray(data.attachments) ? data.attachments : []
+        };
+    }
+    catch (error) {
+        console.error('Error fetching email attachments:', error);
+        return { code: -3, description: '', attachments: [] };
     }
 }
 // Define the 'validateAddress' tool
@@ -141,6 +256,174 @@ server.registerTool("CheckEmailStatus", {
         structuredContent: {
             results: results
         }
+    };
+});
+// Define the 'GetServerStatus' tool
+server.registerTool("GetServerStatus", {
+    title: "Get Server Status",
+    description: "Fetches Xeams server status, including uptime, memory usage, disk space, and email queue counts.",
+    inputSchema: {},
+    outputSchema: {
+        buildNo: z.number().describe("Build number"),
+        runningSince: z.string().describe("Date and time the server started"),
+        upTime: z.string().describe("Human-readable uptime"),
+        maxMemory: z.string().describe("Maximum JVM memory"),
+        allocatedMemory: z.string().describe("Allocated JVM memory"),
+        freeMemory: z.string().describe("Free JVM memory"),
+        incomingEmails: z.number().describe("Number of incoming emails"),
+        outgoingEmails: z.number().describe("Number of outgoing emails"),
+        stuckInOutboundQueue: z.number().describe("Number of emails stuck in the outbound queue"),
+        processingQueue: z.number().describe("Number of emails currently being processed"),
+        freeDisk: z.string().describe("Free disk space"),
+        totalDisk: z.string().describe("Total disk space")
+    }
+}, async () => {
+    const status = await getServerStatus();
+    if (!status) {
+        return {
+            content: [{ type: "text", text: "Failed to fetch server status." }],
+            isError: true
+        };
+    }
+    return {
+        content: [
+            {
+                type: "text",
+                text: `Xeams build ${status.buildNo}, up ${status.upTime}. Memory: ${status.allocatedMemory}/${status.maxMemory} (${status.freeMemory} free). Disk: ${status.freeDisk} free of ${status.totalDisk}. Incoming: ${status.incomingEmails}, outgoing: ${status.outgoingEmails}, queued: ${status.processingQueue}, stuck: ${status.stuckInOutboundQueue}.`,
+            },
+        ],
+        structuredContent: {
+            buildNo: status.buildNo,
+            runningSince: status.runningSince,
+            upTime: status.upTime,
+            maxMemory: status.maxMemory,
+            allocatedMemory: status.allocatedMemory,
+            freeMemory: status.freeMemory,
+            incomingEmails: status.incomingEmails,
+            outgoingEmails: status.outgoingEmails,
+            stuckInOutboundQueue: status.stuckInOutboundQueue,
+            processingQueue: status.processingQueue,
+            freeDisk: status.freeDisk,
+            totalDisk: status.totalDisk
+        }
+    };
+});
+// Define the 'SearchEmails' tool
+server.registerTool("SearchEmails", {
+    title: "Search Emails",
+    description: "Searches for emails in Xeams matching a search string, optionally scoped to a number of days back and a profile ID. Returns matching messages with their lcid/clusterIndex, which can be used with FetchEmailRaw, FetchEmailBody, or FetchEmailAttachments.",
+    inputSchema: {
+        searchFor: z.string().describe("Text to search for."),
+        numDays: z.number().int().optional().describe("Number of days back to search. If missing, the server default is used."),
+        profileId: z.number().int().optional().describe("Profile ID to search within. If missing, the default profile is searched.")
+    },
+    outputSchema: {
+        results: z.array(z.object({
+            lcid: z.number().describe("LCID identifying the message"),
+            clusterIndex: z.number().describe("Cluster index (-1 for master Xeams)"),
+            subject: z.string().describe("Email subject"),
+            date: z.number().describe("Date in milliseconds since Unix epoch"),
+            score: z.number().describe("Spam/relevance score"),
+            senderName: z.string().describe("Sender's display name"),
+            senderEmail: z.string().describe("Sender's email address"),
+            recipients: z.string().describe("Comma-separated list of recipients")
+        })).describe("Array of matching messages")
+    }
+}, async ({ searchFor, numDays, profileId }) => {
+    const results = await searchEmails(searchFor, numDays, profileId);
+    return {
+        content: [
+            {
+                type: "text",
+                text: `Found ${results.length} email(s) matching "${searchFor}".`,
+            },
+        ],
+        structuredContent: { results }
+    };
+});
+const emailFetchInputSchema = {
+    lcid: z.number().int().describe("LCID identifying the message, obtained from SearchEmails."),
+    clusterIndex: z.number().int().optional().describe("Cluster index. -1 means the master Xeams. If missing, -1 is assumed."),
+    profileId: z.number().int().optional().describe("Profile ID. If missing, 1 is assumed."),
+    startingDate: z.string().optional().describe("Starting date to search for, in YYYY-MM-DD format. If missing, the server's message cache configuration is used.")
+};
+// Define the 'FetchEmailRaw' tool
+server.registerTool("FetchEmailRaw", {
+    title: "Fetch Raw Email",
+    description: "Fetches the raw MIME content (*.eml) of an email, encoded in base64. Contains headers, body and attachments.",
+    inputSchema: emailFetchInputSchema,
+    outputSchema: {
+        code: z.number().describe("200 on success, 404 if the email is not found."),
+        description: z.string().describe("Base64 encoded EML content on success.")
+    }
+}, async ({ lcid, clusterIndex, profileId, startingDate }) => {
+    const result = await fetchEmailRaw({ lcid, clusterIndex, profileId, startingDate });
+    const found = result.code === 200;
+    return {
+        content: [
+            {
+                type: "text",
+                text: found
+                    ? `Fetched raw EML for lcid ${lcid} (base64, ${result.description.length} chars).`
+                    : `Email with lcid ${lcid} not found (code: ${result.code}).`,
+            },
+        ],
+        structuredContent: result
+    };
+});
+// Define the 'FetchEmailBody' tool
+server.registerTool("FetchEmailBody", {
+    title: "Fetch Email Body",
+    description: "Fetches the body of an email, encoded in base64. HTML body is preferred over plain text when both are present.",
+    inputSchema: emailFetchInputSchema,
+    outputSchema: {
+        code: z.number().describe("200 on success, 404 if the email is not found."),
+        description: z.string().describe("Base64 encoded email body on success.")
+    }
+}, async ({ lcid, clusterIndex, profileId, startingDate }) => {
+    const result = await fetchEmailBody({ lcid, clusterIndex, profileId, startingDate });
+    const found = result.code === 200;
+    return {
+        content: [
+            {
+                type: "text",
+                text: found
+                    ? `Fetched body for lcid ${lcid} (base64, ${result.description.length} chars).`
+                    : `Email with lcid ${lcid} not found (code: ${result.code}).`,
+            },
+        ],
+        structuredContent: result
+    };
+});
+// Define the 'FetchEmailAttachments' tool
+server.registerTool("FetchEmailAttachments", {
+    title: "Fetch Email Attachments",
+    description: "Fetches the attachments of an email. Each attachment's content is base64 encoded.",
+    inputSchema: emailFetchInputSchema,
+    outputSchema: {
+        code: z.number().describe("200 on success, 404 if the email is not found."),
+        description: z.string().describe("Arbitrary description."),
+        attachments: z.array(z.object({
+            content: z.string().describe("Base64 encoded file content"),
+            name: z.string().describe("File name"),
+            type: z.string().optional().describe("MIME type"),
+            inline: z.boolean().optional().describe("True if the image is part of the HTML content"),
+            "content-id": z.string().optional().describe("Content ID, used for inline images")
+        })).describe("Array of attachments")
+    }
+}, async ({ lcid, clusterIndex, profileId, startingDate }) => {
+    const result = await fetchEmailAttachments({ lcid, clusterIndex, profileId, startingDate });
+    const found = result.code === 200;
+    return {
+        content: [
+            {
+                type: "text",
+                text: found
+                    ? `Found ${result.attachments.length} attachment(s) for lcid ${lcid}: ${result.attachments.map(a => a.name).join(', ') || 'none'}.`
+                    : `Email with lcid ${lcid} not found (code: ${result.code}).`,
+            },
+        ],
+        structuredContent: result
     };
 });
 let testEmail = "support@AnInvalidDomain.com";
